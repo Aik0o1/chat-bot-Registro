@@ -2,13 +2,12 @@ from langchain_community.llms import Ollama
 from flask import Flask, render_template, request, jsonify, session
 from flask_session import Session
 from langchain_community.vectorstores import FAISS
-from langchain.chains import RetrievalQA
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader
 from langchain.prompts import PromptTemplate
-from langchain.chains.question_answering import load_qa_chain
 from typing import List, Dict
+
 
 app = Flask(__name__)
 app.config["SESSION_TYPE"] = "filesystem"
@@ -20,10 +19,67 @@ text_splitter = RecursiveCharacterTextSplitter(
     length_function=len
 )
 
+class ConversationContextManager:
+    def __init__(self, max_history=5):
+        self.max_history = max_history
+        self.conversation_context = []
+    
+    def add_interaction(self, user_query: str, ai_response: str):
+        """Adiciona uma interação ao contexto da conversa"""
+        self.conversation_context.append({
+            "user_query": user_query,
+            "ai_response": ai_response
+        })
+        
+        # Limita o histórico ao tamanho máximo
+        if len(self.conversation_context) > self.max_history:
+            self.conversation_context.pop(0)
+    
+    def get_context_summary(self) -> str:
+        """Gera um sumário do contexto da conversa"""
+        if not self.conversation_context:
+            return "Sem histórico de conversa."
+        
+        context_summary = "Histórico recente da conversa:\n"
+        for interaction in self.conversation_context:
+            context_summary += f"- Pergunta: {interaction['user_query']}\n"
+        
+        return context_summary
+    
+    def enhance_query(self, current_query: str) -> str:
+        """Tenta adicionar contexto à pergunta atual"""
+        if not self.conversation_context:
+            return current_query
+        
+        # Palavras que indicam continuidade
+        context_indicators = [
+            'isso', 'aquilo', 'ele', 'ela', 'este', 'esta', 
+            'esse', 'essa', 'aí', 'ali', 'então'
+        ]
+        
+        # Verifica se a pergunta atual usa palavras de contexto
+        query_lower = current_query.lower()
+        uses_context_indicator = any(
+            indicator in query_lower for indicator in context_indicators
+        )
+        
+        if uses_context_indicator:
+            # Usa a última interação para contextualizar
+            last_interaction = self.conversation_context[-1]
+            enhanced_query = (
+                f"Considerando a pergunta anterior '{last_interaction['user_query']}' "
+                f"e o contexto: {last_interaction['ai_response']}, "
+                f"responda: {current_query}"
+            )
+            return enhanced_query
+        
+        return current_query
+
 class EnhancedQASystem:
     def __init__(self, data_path: str = "./data/"):
         self.setup_document_processing(data_path)
         self.setup_model()
+        self.conversation_manager = ConversationContextManager()
         
     def setup_document_processing(self, data_path: str):
         loader = DirectoryLoader(data_path, glob="*.pdf", loader_cls=PyPDFLoader)
@@ -41,55 +97,48 @@ class EnhancedQASystem:
         )
         
     def setup_model(self):
-        # Prompt mais simples e direto
-        self.prompt = PromptTemplate(
-            template="""Use o contexto fornecido para responder a pergunta. 
-            Se a resposta não estiver no contexto, diga "Não encontrei informações nos documentos".
-
-            Contexto: {context}
-            
-            Pergunta: {question}
-            
-            Resposta:""",
-            input_variables=["context", "question"]
-        )
-        
         self.llm = Ollama(
             model="llama3.2", 
             temperature=0.2, 
             top_p=0.9
         )
-        
-        # Cria chain de QA com base no prompt personalizado
-        self.qa_chain = load_qa_chain(
-            llm=self.llm, 
-            chain_type="stuff", 
-            prompt=self.prompt
-        )
-        
-        # Configuração do retriever
-        self.retriever = self.vector_store.as_retriever(
-            search_type="mmr",
-            search_kwargs={
-                "k": 5,
-                "fetch_k": 10,
-                "lambda_mult": 0.7
-            }
-        )
     
-    def process_query(self, question: str) -> Dict:
+    def find_relevant_documents(self, query: str, top_k: int = 5):
+        """Encontra documentos relevantes para a consulta"""
+        return self.vector_store.similarity_search(query, k=top_k)
+    
+    def process_query(self, query: str) -> Dict:
         try:
-            # Recupera documentos relevantes
-            relevant_docs = self.retriever.get_relevant_documents(question)
+            # Melhora a consulta com contexto
+            enhanced_query = self.conversation_manager.enhance_query(query)
             
-            # Processa a pergunta com os documentos relevantes
-            result = self.qa_chain(
-                {"input_documents": relevant_docs, "question": question},
-                return_only_outputs=True
-            )
+            # Busca documentos relevantes
+            relevant_docs = self.find_relevant_documents(enhanced_query)
+            
+            # Prepara contexto da conversa
+            conversation_context = self.conversation_manager.get_context_summary()
+            
+            # Prompt personalizado com contexto
+            prompt = f"""Sistema de Resposta Contextual:
+
+Contexto da Conversa:
+{conversation_context}
+
+Documentos Relevantes:
+{chr(10).join(doc.page_content for doc in relevant_docs)}
+
+Pergunta: {enhanced_query}
+
+Responda de forma precisa e concisa, baseando-se nos documentos disponíveis."""
+            
+            # Gera resposta usando Ollama
+            response = self.llm.invoke(prompt)
+            
+            # Adiciona interação ao contexto da conversa
+            self.conversation_manager.add_interaction(query, response)
             
             return {
-                "answer": result.get('output_text', "Não foi possível gerar resposta."),
+                "answer": response,
                 "source_documents": [
                     {"content": doc.page_content, "source": doc.metadata.get("source", "unknown")}
                     for doc in relevant_docs

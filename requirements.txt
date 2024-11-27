@@ -1,5 +1,7 @@
-langchain
-faiss-cpu
 flask
-huggingface-hub
-langchain_community
+flask-session
+langchain-community
+faiss-cpu
+pypdf
+sentence-transformers
+PyPDF2

@@ -1,0 +1,20 @@
+version: '3.8'
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    command: ollama pull llama3.2
+    restart: unless-stopped
+
+  chatbot:
+    image:  
+    container_name: chatbot
+    ports:
+      - "5000:500"
+    command: python3 app.py
+   
+    depends_on:
+      - ollama 
+    restart: unless-stopped

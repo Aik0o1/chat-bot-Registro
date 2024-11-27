@@ -1,40 +1,23 @@
 from langchain_community.llms import Ollama
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, session
+from flask_session import Session
 from langchain_community.vectorstores import FAISS
-from langchain.memory import ConversationBufferMemory
-from langchain.chains import ConversationalRetrievalChain
+from langchain.chains import RetrievalQA
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader
 from langchain.prompts import PromptTemplate
-from langchain.callbacks import get_openai_callback
+from langchain.chains.question_answering import load_qa_chain
 from typing import List, Dict
 
 app = Flask(__name__)
+app.config["SESSION_TYPE"] = "filesystem"
+Session(app)
 
-# Configuração melhorada do text splitter
 text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=1000,  # Aumentado para capturar mais contexto
-    chunk_overlap=200,  # Aumentado para melhor continuidade
-    length_function=len,
-    separators=["\n\n", "\n", " ", ""],
-    is_separator_regex=False,
-)
-
-# Template de prompt melhorado
-custom_prompt = PromptTemplate(
-    template="""Você é um assistente especialista que tem acesso a documentos específicos.
-    Use as seguintes partes de contexto para responder à pergunta do usuário.
-    Se você não souber a resposta, diga simplesmente que não sabe - não tente inventar uma resposta.
-    Se a pergunta não estiver relacionada ao contexto, tente dar uma resposta geral útil.
-    Use o histórico da conversa quando relevante.
-    
-    Contexto: {context}
-    Histórico: {chat_history}
-    Pergunta: {question}
-    
-    Resposta útil:""",
-    input_variables=["context", "chat_history", "question"]
+    chunk_size=1000,
+    chunk_overlap=200,
+    length_function=len
 )
 
 class EnhancedQASystem:
@@ -43,83 +26,85 @@ class EnhancedQASystem:
         self.setup_model()
         
     def setup_document_processing(self, data_path: str):
-        # Carregamento e processamento de documentos
         loader = DirectoryLoader(data_path, glob="*.pdf", loader_cls=PyPDFLoader)
         documents = loader.load()
         self.text_chunks = text_splitter.split_documents(documents)
         
-        # Configuração de embeddings
         self.embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/all-MiniLM-L6-v2",
             model_kwargs={'device': 'cpu'}
         )
         
-        # Criação do vector store com configurações otimizadas
         self.vector_store = FAISS.from_documents(
             self.text_chunks,
             self.embeddings
         )
         
     def setup_model(self):
-        # Configuração do modelo com parâmetros otimizados
+        # Prompt mais simples e direto
+        self.prompt = PromptTemplate(
+            template="""Use o contexto fornecido para responder a pergunta. 
+            Se a resposta não estiver no contexto, diga "Não encontrei informações nos documentos".
+
+            Contexto: {context}
+            
+            Pergunta: {question}
+            
+            Resposta:""",
+            input_variables=["context", "question"]
+        )
+        
         self.llm = Ollama(
-            model="llama3.2",
-            temperature=0.7,  # Ajuste conforme necessário
-            top_p=0.9,
+            model="llama3.2", 
+            temperature=0.2, 
+            top_p=0.9
         )
         
-        # Memória com configuração melhorada
-        self.memory = ConversationBufferMemory(
-            memory_key="chat_history",
-            return_messages=True,
-            output_key='answer',
-            input_key='question'
+        # Cria chain de QA com base no prompt personalizado
+        self.qa_chain = load_qa_chain(
+            llm=self.llm, 
+            chain_type="stuff", 
+            prompt=self.prompt
         )
         
-        # Configuração da chain com retrieval melhorado
-        self.chain = ConversationalRetrievalChain.from_llm(
-            llm=self.llm,
-            chain_type="stuff",
-            retriever=self.vector_store.as_retriever(
-                search_type="mmr",  # Maximum Marginal Relevance para diversidade
-                search_kwargs={
-                    "k": 4,  # Aumentado para mais contexto
-                    "fetch_k": 8,  # Busca inicial maior
-                    "lambda_mult": 0.7  # Balanceamento entre relevância e diversidade
-                }
-            ),
-            memory=self.memory,
-            combine_docs_chain_kwargs={'prompt': custom_prompt},
-            return_source_documents=True,
-            verbose=True
+        # Configuração do retriever
+        self.retriever = self.vector_store.as_retriever(
+            search_type="mmr",
+            search_kwargs={
+                "k": 5,
+                "fetch_k": 10,
+                "lambda_mult": 0.7
+            }
         )
     
-    def get_relevant_chunks(self, query: str) -> List[str]:
-        """Retorna os chunks mais relevantes para debug"""
-        docs = self.vector_store.similarity_search(query, k=3)
-        return [doc.page_content for doc in docs]
-    
-    def answer_question(self, question: str) -> Dict:
-        """Processa a pergunta e retorna resposta com metadados"""
+    def process_query(self, question: str) -> Dict:
         try:
-            result = self.chain({"question": question})
+            # Recupera documentos relevantes
+            relevant_docs = self.retriever.get_relevant_documents(question)
+            
+            # Processa a pergunta com os documentos relevantes
+            result = self.qa_chain(
+                {"input_documents": relevant_docs, "question": question},
+                return_only_outputs=True
+            )
             
             return {
-                "answer": result["answer"],
+                "answer": result.get('output_text', "Não foi possível gerar resposta."),
                 "source_documents": [
                     {"content": doc.page_content, "source": doc.metadata.get("source", "unknown")}
-                    for doc in result.get("source_documents", [])
+                    for doc in relevant_docs
                 ],
                 "success": True
             }
+        
         except Exception as e:
             return {
-                "answer": "Desculpe, ocorreu um erro ao processar sua pergunta.",
-                "error": str(e),
+                "answer": f"Erro ao processar: {str(e)}",
+                "source_documents": [],
                 "success": False
             }
 
-# Instância global do sistema
+# Instância global
 qa_system = EnhancedQASystem()
 
 @app.route("/")
@@ -130,45 +115,22 @@ def index():
 def chat():
     try:
         user_input = request.form["user_input"]
-        print(f"Received input: {user_input}")  # Log de entrada
         
-        result = qa_system.answer_question(user_input)
-        print(f"QA Result: {result}")  # Log do resultado
+        # Processa a pergunta
+        result = qa_system.process_query(user_input)
         
-        serialized_result = {
-            "answer": result.get("answer", "Não foi possível gerar uma resposta."),
+        return jsonify({
+            "answer": result.get("answer", "Não foi possível gerar resposta"),
             "source_documents": result.get("source_documents", []),
             "success": result.get("success", False)
-        }
-        
-        return jsonify(serialized_result)
+        })
+    
     except Exception as e:
-        print(f"Error in chat route: {e}")  # Log de erro
         return jsonify({
             "answer": f"Erro interno: {str(e)}",
             "source_documents": [],
             "success": False
         })
-
-# No método answer_question da classe, ajuste para garantir serialização:
-def answer_question(self, question: str) -> Dict:
-    try:
-        result = self.chain({"question": question})
-        
-        return {
-            "answer": result.get("answer", "Não foi possível gerar uma resposta."),
-            "source_documents": [
-                {"content": doc.page_content, "source": doc.metadata.get("source", "unknown")}
-                for doc in result.get("source_documents", [])
-            ],
-            "success": True
-        }
-    except Exception as e:
-        return {
-            "answer": f"Erro ao processar: {str(e)}",
-            "source_documents": [],
-            "success": False
-        }
 
 if __name__ == "__main__":
     app.run(debug=True)

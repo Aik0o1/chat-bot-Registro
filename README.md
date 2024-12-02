@@ -1,74 +1,80 @@
-# PetCare AI Chatbot using Langchain, llama3, and Flask
+# Chatbot de Direito Empresarial - Langchain, llama3.2, e Flask
 
-This project implements an AI Chatbot that can answer queries based on PDF files from a dataset. The chatbot utilizes Langchain, Ollama, and Flask frameworks, along with the RAG (Retrieval Augmentation Generation) technique for generating answers.
+Este projeto implementa um chatbot de IA capaz de responder perguntas com base em arquivos PDF de um conjunto de dados. O chatbot utiliza as frameworks Langchain, Ollama e Flask, além da técnica RAG (Retrieval Augmentation Generation) para gerar respostas precisas.
 
-<p><img height="300" width="1000" src="https://github.com/rajveersinghcse/rajveersinghcse/blob/master/img/PetCare-AI-Chatbot.gif" alt="gif"></p>
+Projeto base: [PetCare-AI-Chatbot](https://github.com/rajveersinghcse/PetCare-AI-Chatbot)
 
-## Core Concept
+## Conceito Principal
 
-The core concept behind this AI Chatbot lies in leveraging advanced natural language processing (NLP) techniques to provide accurate and context-aware responses to user queries. Here's a brief overview of the key components:
+O conceito central deste chatbot de IA está no uso de técnicas avançadas de processamento de linguagem natural (NLP) para fornecer respostas precisas e contextuais às perguntas dos usuários. A seguir, um breve resumo dos principais componentes:
 
-- **Langchain**: Langchain is a powerful framework that integrates various NLP tools and libraries, making it easier to build complex conversational systems. In this project, Langchain is used for document loading, text splitting, embeddings, and more.
+- **Langchain**: Framework que integra várias ferramentas e bibliotecas de NLP, facilitando a construção de sistemas de conversação complexos. Neste projeto, é usada para carregamento de documentos, divisão de textos, embeddings e mais.
 
-- **Ollama**: Ollama is an advanced language model (LLM) that enables the chatbot to understand and generate human-like responses. By incorporating Ollama into the conversational chain, the chatbot gains a deeper understanding of user queries and context.
+- **Ollama**: Modelo de linguagem avançado (LLM) que permite ao chatbot compreender e gerar respostas semelhantes às humanas. Ao incorporar o Ollama na cadeia de conversação, o chatbot ganha uma compreensão mais profunda das perguntas dos usuários e do contexto.
 
-- **Flask**: Flask is a lightweight web framework used for building web applications, including APIs and web-based interfaces. In this project, Flask serves as the backend server for hosting the chatbot and handling user interactions.
+- **Flask**: Framework web leve usado para construir aplicações web, incluindo APIs e interfaces baseadas na web. No projeto, o Flask serve como servidor backend, hospedando o chatbot e lidando com as interações dos usuários.
 
-- **RAG (Retrieval Augmentation Generation)**: RAG is a methodology that combines information retrieval (retrieval) with language generation (generation) to produce high-quality responses. By retrieving relevant information from PDF documents using Langchain's retrieval capabilities and augmenting it with Ollama's generation, the chatbot can provide accurate and informative answers.
+- **RAG (Retrieval Augmentation Generation)**: Metodologia que combina a recuperação de informações (retrieval) com a geração de linguagem (generation) para produzir respostas de alta qualidade. Ao recuperar informações relevantes dos PDFs usando as capacidades de recuperação do Langchain e complementá-las com a geração do Ollama, o chatbot pode fornecer respostas precisas e informativas.
 
-## Installation
+## Instalação
 
-1. Clone the repository:
+1. Clone o repositório:
    ```bash
-   git clone https://github.com/rajveersinghcse/PetCare-AI-Chatbot.git
-   cd your_repository
+   git clone https://github.com/Aik0o1/chat-bot-Registro.git
+   cd chat-bot-Registro
    ```
 
-2. Install dependencies:
+2. Instale as dependências:
    ```bash
    pip install -r requirements.txt
    ```
 
-## Usage
+## Uso
 
-1. Ensure you have the necessary PDF files in the `data/` directory. Supported PDF files include:
-   - `dog_care_encyclopedia.pdf`
-   - `Veterinary_Clinical_Pathology.pdf`
-   - You can add more pdf files. But it will take a lot of computational resources.
+1. Confirme que você tem os arquivos PDF necessários na pasta `data/`. Incluímos os seguintes documentos de Direito Empresarial:
+   - [Legislações Federais](https://www.gov.br/empresas-e-negocios/pt-br/drei/legislacao/legislacoes-federais)
+   - [Instruções Normativas](https://www.gov.br/empresas-e-negocios/pt-br/drei/legislacao/instrucoes-normativas)
+   - [Leis Estaduais e complementares](https://www.piauidigital.pi.gov.br/home/legislacao/)
+   - Você pode adicionar mais arquivos, mas isso exigirá mais recursos computacionais.
 
-2. You have to run your llama model from Ollama.
+2. Você deve instalar o servidor Ollama e configurar o model llama3.2. 
    ```bash
-   Ollama serve
+   curl -fsSL https://ollama.com/install.sh | sh
+   ollama pull llama3.2
+   ollama serve
    ```
 
-4. Run the Flask application:
+   ```bash
+   # Opção com Docker:
+   docker run -p 11434:11434 ollama/ollama
+   docker exec -it <container_id> bash
+   ollama pull llama3.2
+   ```
+
+
+4. Rode a aplicação Flask:
    ```bash
    python app.py
    ```
 
-5. Access the chatbot interface by navigating to `http://localhost:5000` in your web browser.
+5. Acesse a interface do chatbot no navegador, digitando `http://localhost:5000`.
 
-## Project Structure
+## Estrutura do projeto Structure
 
-- `app.py`: Flask application for running the chatbot server.
-- `templates/index.html`: HTML template for the chatbot interface.
-- `data/`: Directory containing PDF files used for answering queries.
-- `requirements.txt`: List of Python dependencies.
+- `app.py`: Aplicação Flask que executa o servidor do chatbot.
+- `templates/index.html`: Template HTML para a interface do chatbot.
+- `data/`: Diretório contendo os arquivos PDF usados para responder perguntas.
+- `requirements.txt`: Lista de dependências do Python.
 
-## Configuration
+## Configurações
 
-- `loader`: Loads PDF documents from the `data/` directory using Langchain's `DirectoryLoader`.
-- `text_splitter`: Splits PDF documents into chunks for processing.
-- `embeddings`: Utilizes Hugging Face embeddings for text representation.
-- `vector_store`: Stores text chunks using FAISS for efficient retrieval.
-- `llm`: Implements Ollama's Large Language Model for conversational context.
-- `memory`: Manages conversation history for context-aware responses.
-- `chain`: Constructs the Conversational Retrieval Chain using the configured components.
-
-## Contributing
-
-Contributions to enhance the chatbot's functionality, add new features, or improve documentation are welcome. Please fork the repository, make your changes, and submit a pull request.
-
-## License
-
-This project is licensed under the [MIT License](LICENSE).
+1. `text_splitter`: Divide os documentos em blocos menores para processamento.
+- `chunk_size`: Delimita o máximo de caracteres que um pedaço pode ter
+- `chunk_overlap`: Número de caracteres que devem se sobrepor entre dois pedaços adjacentes.
+2. `class ConversationContextManager`: Gerencia o contexto da conversa, armazenando as interações e fornecendo um resumo contextual para perguntas futuras.
+3. `class EnhancedQASystem`: Sistema principal que integra todas as partes e processa as consultas dos usuários.
+- `loader`: Carrega documentos PDF da pasta data/ usando o DirectoryLoader do Langchain, que utiliza o PyPDFLoader para leitura dos arquivos.
+- `text_chunks`: Blocos de texto gerados a partir dos documentos carregados, usando o text_splitter.
+- `embeddings`: : Utiliza o modelo sentence-transformers/all-MiniLM-L6-v2 da Hugging Face para gerar representações vetoriais dos blocos de texto.
+- `vector_store`: Armazena os blocos de texto usando FAISS, permitindo a recuperação eficiente baseada em similaridade.
+- `llm`: Implementa o modelo Ollama (Llama3.2), configurado com parâmetros como temperature e top_p, para controlar a geração de texto.

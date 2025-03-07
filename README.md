@@ -78,3 +78,10 @@ O conceito central deste chatbot de IA está no uso de técnicas avançadas de p
 - `embeddings`: : Utiliza o modelo sentence-transformers/all-MiniLM-L6-v2 da Hugging Face para gerar representações vetoriais dos blocos de texto.
 - `vector_store`: Armazena os blocos de texto usando FAISS, permitindo a recuperação eficiente baseada em similaridade.
 - `llm`: Implementa o modelo Ollama (Llama3.2), configurado com parâmetros como temperature e top_p, para controlar a geração de texto.
+
+## Fluxograma de funcionamento do sistema
+
+<img src="./assets/Fluxograma chatbot(1).svg"></img>
+
+## Obsevações
+- O chatbot usa apenas CPU para processar as perguntas, visto que há ausência de GPU

@@ -1,13 +1,13 @@
-from langchain_community.llms import Ollama
+from langchain_ollama import ChatOllama
 from flask import Flask, render_template, request, jsonify, session
 from flask_session import Session
 from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader
 from langchain.prompts import PromptTemplate
 from typing import List, Dict
-
+import os, time 
 
 app = Flask(__name__)
 app.config["SESSION_TYPE"] = "filesystem"
@@ -76,31 +76,78 @@ class ConversationContextManager:
         return current_query
 
 class EnhancedQASystem:
-    def __init__(self, data_path: str = "./data/"):
-        self.setup_document_processing(data_path)
+    def __init__(self, data_path: str = "./data/", faiss_index_path: str = "faiss_index"):
         self.setup_model()
         self.conversation_manager = ConversationContextManager()
-        
-    def setup_document_processing(self, data_path: str):
-        loader = DirectoryLoader(data_path, glob="*.pdf", loader_cls=PyPDFLoader)
-        documents = loader.load()
-        self.text_chunks = text_splitter.split_documents(documents)
-        
+
+        print("🔄 Inicializando sistema de QA...")
+        self.faiss_index_path = faiss_index_path
+        print("🔄 Baixando modelo...")
         self.embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/all-MiniLM-L6-v2",
             model_kwargs={'device': 'cpu'}
         )
+        print("✅ Modelo carregado com sucesso!")
         
+        # Tenta carregar o índice FAISS salvo, senão recria do zero
+        if os.path.exists(f"{self.faiss_index_path}.pkl"):
+            self.load_faiss_index()
+        else:
+            self.setup_document_processing(data_path)
+            self.save_faiss_index()
+
+    def setup_document_processing(self, data_path: str):
+        print("📂 Carregando documentos...")
+
+        # Verifica se o índice FAISS já está salvo
+        if self.load_faiss_index():
+            return  # Já carregou o índice, então não precisa refazer tudo
+
+        loader = DirectoryLoader(data_path, glob="*.pdf", loader_cls=PyPDFLoader)
+        documents = loader.load()
+        self.text_chunks = text_splitter.split_documents(documents)
+
+        self.embeddings = HuggingFaceEmbeddings(
+            model_name="sentence-transformers/all-MiniLM-L6-v2",
+            model_kwargs={'device': 'cpu'}
+        )
+
         self.vector_store = FAISS.from_documents(
             self.text_chunks,
             self.embeddings
         )
+
+        self.save_faiss_index()  # Salva o índice FAISS para reutilizar depois
+
+
+    def save_faiss_index(self, index_path="faiss_index"):
+        """Salva o índice FAISS para evitar reconstrução demorada."""
+        if not os.path.exists(index_path):
+            os.makedirs(index_path)
+        self.vector_store.save_local(index_path)
+        print("💾 Índice FAISS salvo em disco!")
         
+
+    def load_faiss_index(self, index_path="faiss_index"):
+        """Carrega o índice FAISS se já existir em disco."""
+        if os.path.exists(index_path):
+            print("🔄 Carregando índice FAISS salvo...")
+            self.vector_store = FAISS.load_local(
+                index_path,
+                self.embeddings,
+                allow_dangerous_deserialization=True  # 🚨 Adicionando essa flag
+            )
+            print("✅ Índice FAISS carregado!")
+            return True
+        return False
+
+
     def setup_model(self):
-        self.llm = Ollama(
+        self.llm = ChatOllama(
             model="llama3.2", 
-            temperature=0.2, 
-            top_p=0.9
+            temperature=0.8, 
+            top_p=0.9,
+            stream=True
         )
     
     def find_relevant_documents(self, query: str, top_k: int = 5):
@@ -121,24 +168,27 @@ class EnhancedQASystem:
             # Prompt personalizado com contexto
             prompt = f"""Sistema de Resposta Contextual:
 
-Contexto da Conversa:
-{conversation_context}
+    Contexto da Conversa:
+    {conversation_context}
 
-Documentos Relevantes:
-{chr(10).join(doc.page_content for doc in relevant_docs)}
+    Documentos Relevantes:
+    {chr(10).join(doc.page_content for doc in relevant_docs)}
 
-Pergunta: {enhanced_query}
+    Pergunta: {enhanced_query}
 
-Responda de forma precisa e concisa, baseando-se nos documentos disponíveis."""
+    Responda de forma precisa e concisa, baseando-se nos documentos disponíveis."""
             
             # Gera resposta usando Ollama
             response = self.llm.invoke(prompt)
-            
+
+            # Extrai o conteúdo da resposta (AIMessage)
+            response_content = response.content  # Isso retorna uma string
+
             # Adiciona interação ao contexto da conversa
-            self.conversation_manager.add_interaction(query, response)
+            self.conversation_manager.add_interaction(query, response_content)
             
             return {
-                "answer": response,
+                "answer": response_content,  # Retorna o conteúdo da resposta
                 "source_documents": [
                     {"content": doc.page_content, "source": doc.metadata.get("source", "unknown")}
                     for doc in relevant_docs
@@ -163,14 +213,19 @@ def index():
 @app.route("/chat", methods=["POST"])
 def chat():
     try:
+        start_time = time.time()  # Captura o tempo inicial
         user_input = request.form["user_input"]
         
         # Processa a pergunta
         result = qa_system.process_query(user_input)
+
+        end_time = time.time()  # Captura o tempo final
+        execution_time = end_time - start_time  # Calcula o tempo de execução
         
         return jsonify({
             "answer": result.get("answer", "Não foi possível gerar resposta"),
             "source_documents": result.get("source_documents", []),
+            "execution_time": execution_time,  # Adiciona o tempo de execução à resposta
             "success": result.get("success", False)
         })
     
@@ -178,6 +233,7 @@ def chat():
         return jsonify({
             "answer": f"Erro interno: {str(e)}",
             "source_documents": [],
+            "execution_time": 0,  # Tempo de execução em caso de erro
             "success": False
         })
 

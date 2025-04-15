@@ -5,5 +5,5 @@ faiss-cpu
 pypdf
 sentence-transformers
 PyPDF2
-cllangchain-huggingface 
+llangchain-huggingface 
 langchain-ollama

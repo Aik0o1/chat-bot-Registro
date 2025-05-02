@@ -147,8 +147,8 @@ class EnhancedQASystem:
             model="qwen2.5:14b", 
             temperature=0.8, 
             top_p=0.9,
-            stream=True
-            base_url="http://host.docker.internal:11434"
+            stream=True,
+            base_url="http://localhost:11434"
         )
     
     def find_relevant_documents(self, query: str, top_k: int = 5):

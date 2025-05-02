@@ -85,7 +85,7 @@ class EnhancedQASystem:
         print("🔄 Baixando modelo...")
         self.embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/all-MiniLM-L6-v2",
-            model_kwargs={'device': 'cpu'}
+            model_kwargs={'device': 'cuda'}
         )
         print("✅ Modelo carregado com sucesso!")
         
@@ -109,7 +109,7 @@ class EnhancedQASystem:
 
         self.embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/all-MiniLM-L6-v2",
-            model_kwargs={'device': 'cpu'}
+            model_kwargs={'device': 'cuda'}
         )
 
         self.vector_store = FAISS.from_documents(
@@ -144,10 +144,11 @@ class EnhancedQASystem:
 
     def setup_model(self):
         self.llm = ChatOllama(
-            model="llama3.2", 
+            model="qwen2.5:14b", 
             temperature=0.8, 
             top_p=0.9,
             stream=True
+            base_url="http://host.docker.internal:11434"
         )
     
     def find_relevant_documents(self, query: str, top_k: int = 5):

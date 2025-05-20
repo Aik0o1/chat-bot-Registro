@@ -9,3 +9,4 @@ langchain-ollama
 gunicorn
 langchain_redis
 markdown
+langchain_huggingface

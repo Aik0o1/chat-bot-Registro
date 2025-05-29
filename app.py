@@ -851,15 +851,15 @@ qa_system_juridico = None
 try:
     # Sistema para registro empresarial
     qa_system_registro = EnhancedQASystem(
-        data_path="data/registro",
-        faiss_index_path="indexes/registro_index",
+        data_path="data/data_registro",
+        faiss_index_path="/faiss/faiss_index_registro",
         domain_name="registro"
     )
     
     # Sistema para documentos jurídicos gerais
     qa_system_juridico = EnhancedQASystem(
-        data_path="data/juridico",
-        faiss_index_path="indexes/juridico_index",
+        data_path="data/data_juridico",
+        faiss_index_path="/faiss/faiss_index_juridico",
         domain_name="juridico"
     )
     
@@ -877,153 +877,95 @@ def format_response(text):
 def chat_registro():
     """Rota para o chatbot de registro empresarial."""
     if "session_id" not in session:
-        session["session_id"] = str(uuid.uuid4().hex)   
-    
-    # Verifica disponibilidade do sistema
+        session["session_id"] = str(uuid.uuid4().hex)
+        logger.info(f"Nova sessão registro iniciada: {session['session_id']}")
     if qa_system_registro is None:
-        return render_template("error.html", 
-                               error="Sistema de registro temporariamente indisponível",
-                               retry_in="5 minutos")
-    
-    return render_template("registro.html", 
-                          session_id=session.get("session_id"),
-                          max_history=CONFIG["max_history_messages"])
-
+        return render_template("error.html", error="Sistema de registro temporariamente indisponível", retry_in="5 minutos")
+    return render_template("registro.html", session_id=session.get("session_id"), max_history=CONFIG["max_history_messages"])
 
 @app.route("/pergunta_chat_registro", methods=["POST"])
+@log_execution_time # Adiciona log de tempo
 def pergunta_chat_registro():
     """Endpoint para processar perguntas do chatbot de registro."""
     try:
-        # Verifica se o sistema está disponível
         if qa_system_registro is None:
-            return jsonify({
-                "answer": "Sistema temporariamente indisponível. Tente novamente em instantes.",
-                "source_documents": [],
-                "success": False
-            }), 503  # Service Unavailable
-            
-        # Obtém dados da requisição
-        start_time = time.time()
+            return jsonify({"answer": "Sistema temporariamente indisponível.", "source_documents": [], "success": False}), 503
+        
         user_input = request.form.get("user_input", "")
         session_id = session.get('session_id', str(uuid.uuid4().hex))
+        if 'session_id' not in session: session['session_id'] = session_id # Garante que session_id está na sessão
         
-        # Valida entrada
         if not user_input or len(user_input.strip()) < 3:
-            return jsonify({
-                "answer": "Por favor, faça uma pergunta mais completa.",
-                "source_documents": [],
-                "success": False
-            }), 400  # Bad Request
+            return jsonify({"answer": "Por favor, faça uma pergunta mais completa.", "source_documents": [], "success": False}), 400
+        if len(user_input) > 1000: user_input = user_input[:1000] + "..."
         
-        # Limite de tamanho
-        if len(user_input) > 1000:
-            user_input = user_input[:1000] + "..."
-        
-        # Registra a pergunta no log com session_id
         logger_adapter = SessionAdapter(logger, {'session_id': session_id})
         logger_adapter.info(f"Pergunta registro: {user_input[:100]}...")
         
-        # Processa a consulta
         result = qa_system_registro.process_query(session_id, user_input)
         
-        # Calcula tempo de execução
-        end_time = time.time()
-        execution_time = end_time - start_time
+        # Formata a resposta para HTML
+        if result.get("success", False):
+            result["answer"] = format_response(result.get("content", ""))
+        else:
+             result["answer"] = format_response(result.get("content", "Ocorreu um erro."))
         
-        # Adiciona informação de tempo à resposta
-        result["execution_time"] = execution_time
-        
-        logger_adapter.info(f"Resposta gerada em {execution_time:.2f}s")
-        result["answer"] = format_response(result["answer"])
+        # Remove a chave 'content' original para evitar redundância no JSON
+        result.pop('content', None)
+
         return jsonify(result)
     
     except Exception as e:
-        logger.error(f"Erro interno: {str(e)}")
+        logger.error(f"Erro interno em pergunta_chat_registro: {str(e)}")
         logger.debug(traceback.format_exc())
-        
-        return jsonify({
-            "answer": "Ocorreu um erro ao processar sua pergunta. Por favor, tente novamente.",
-            "source_documents": [],
-            "execution_time": 0,
-            "success": False
-        }), 500  # Internal Server Error
-
+        return jsonify({"answer": format_response("Ocorreu um erro grave ao processar sua pergunta."), "source_documents": [], "success": False}), 500
 
 @app.route("/chat_juridico")
 def chat_juridico():
     """Rota para o chatbot jurídico."""
     if "session_id" not in session:
-        session["session_id"] = str(uuid.uuid4().hex)   
-    
-    # Verifica disponibilidade do sistema
+        session["session_id"] = str(uuid.uuid4().hex)
+        logger.info(f"Nova sessão juridico iniciada: {session['session_id']}")
     if qa_system_juridico is None:
-        return render_template("error.html", 
-                               error="Sistema jurídico temporariamente indisponível",
-                               retry_in="5 minutos")
-    
-    return render_template("juridico.html", 
-                          session_id=session.get("session_id"),
-                          max_history=CONFIG["max_history_messages"])
-
+        return render_template("error.html", error="Sistema jurídico temporariamente indisponível", retry_in="5 minutos")
+    return render_template("juridico.html", session_id=session.get("session_id"), max_history=CONFIG["max_history_messages"])
 
 @app.route("/pergunta_chat_juridico", methods=["POST"])
+@log_execution_time # Adiciona log de tempo
 def pergunta_chat_juridico():
     """Endpoint para processar perguntas do chatbot jurídico."""
     try:
-        # Verifica se o sistema está disponível
         if qa_system_juridico is None:
-            return jsonify({
-                "answer": "Sistema temporariamente indisponível. Tente novamente em instantes.",
-                "source_documents": [],
-                "success": False
-            }), 503  # Service Unavailable
-            
-        # Obtém dados da requisição
-        start_time = time.time()
+            return jsonify({"answer": "Sistema temporariamente indisponível.", "source_documents": [], "success": False}), 503
+        
         user_input = request.form.get("user_input", "")
         session_id = session.get('session_id', str(uuid.uuid4().hex))
-        
-        # Valida entrada
+        if 'session_id' not in session: session['session_id'] = session_id # Garante que session_id está na sessão
+
         if not user_input or len(user_input.strip()) < 3:
-            return jsonify({
-                "answer": "Por favor, faça uma pergunta mais completa.",
-                "source_documents": [],
-                "success": False
-            }), 400  # Bad Request
+            return jsonify({"answer": "Por favor, faça uma pergunta mais completa.", "source_documents": [], "success": False}), 400
+        if len(user_input) > 1000: user_input = user_input[:1000] + "..."
         
-        # Limite de tamanho para prevenir abuso
-        if len(user_input) > 1000:
-            user_input = user_input[:1000] + "..."
-        
-        # Registra a pergunta no log
         logger_adapter = SessionAdapter(logger, {'session_id': session_id})
         logger_adapter.info(f"Pergunta jurídico: {user_input[:100]}...")
         
-        # Processa a consulta
         result = qa_system_juridico.process_query(session_id, user_input)
         
-        # Calcula tempo de execução
-        end_time = time.time()
-        execution_time = end_time - start_time
-        
-        # Adiciona informação de tempo à resposta
-        result["execution_time"] = execution_time
-        
-        logger_adapter.info(f"Resposta gerada em {execution_time:.2f}s")
-        result["answer"] = format_response(result["answer"])
+        # Formata a resposta para HTML
+        if result.get("success", False):
+            result["answer"] = format_response(result.get("content", ""))
+        else:
+             result["answer"] = format_response(result.get("content", "Ocorreu um erro."))
+
+        # Remove a chave 'content' original para evitar redundância no JSON
+        result.pop('content', None)
+
         return jsonify(result)
     
     except Exception as e:
-        logger.error(f"Erro interno: {str(e)}")
+        logger.error(f"Erro interno em pergunta_chat_juridico: {str(e)}")
         logger.debug(traceback.format_exc())
-        
-        return jsonify({
-            "answer": "Ocorreu um erro ao processar sua pergunta. Por favor, tente novamente.",
-            "source_documents": [],
-            "execution_time": 0,
-            "success": False
-        }), 500  # Internal Server Error
-
+        return jsonify({"answer": format_response("Ocorreu um erro grave ao processar sua pergunta."), "source_documents": [], "success": False}), 500
 
 # Endpoint para limpar histórico de conversa
 @app.route("/limpar_historico", methods=["POST"])
